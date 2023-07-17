@@ -25,12 +25,12 @@ import java.util.Objects;
 /**
  * The binary data, stored a primitive value or array.
  * <p>
- * This is a primitive class.
+ * This is a value class.
  *
  * @author squid233
  * @since 0.1.0
  */
-public final /* primitive */ class BinaryData implements BinaryNode {
+public final /* value */ class BinaryData implements BinaryNode {
     private final BinaryDataType type;
     private final Object value;
     private final int size;

@@ -22,6 +22,7 @@ package org.overrun.bintag;
  * @author squid233
  * @since 0.1.0
  */
+@Deprecated(forRemoval = true)
 public enum BinaryDataType {
     BYTE(false),
     SHORT(false),

@@ -26,12 +26,12 @@ import java.util.Objects;
 /**
  * The binary tag, stored a mapping of binary nodes.
  * <p>
- * This is a primitive class.
+ * This is a value class.
  *
  * @author squid233
  * @since 0.1.0
  */
-public final /* primitive */ class BinaryTag implements BinaryNode {
+public final /* value */ class BinaryTag implements BinaryNode {
     private final Map<String, BinaryNode> map;
 
     private BinaryTag(int size) {
