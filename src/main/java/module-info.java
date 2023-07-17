@@ -20,4 +20,6 @@
  */
 module org.overrun.bintag {
     exports org.overrun.bintag;
+
+    requires static org.jetbrains.annotations;
 }

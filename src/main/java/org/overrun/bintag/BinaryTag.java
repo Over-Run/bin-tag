@@ -16,9 +16,13 @@
 
 package org.overrun.bintag;
 
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.UnmodifiableView;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -33,28 +37,36 @@ import java.util.Objects;
  */
 public final /* value */ class BinaryTag implements BinaryNode {
     private final Map<String, BinaryNode> map;
+    private Map<String, BinaryNode> mapView = null;
 
     private BinaryTag(int size) {
-        map = new HashMap<>(size);
+        this.map = HashMap.newHashMap(size);
     }
 
     public static BinaryTag of() {
-        return new BinaryTag(16);
+        return of(16);
     }
 
-    public static BinaryTag of(Map<String, BinaryNode> map) {
+    /**
+     * Creates an empty tag with the given initial capacity.
+     *
+     * @param size the initial capacity.
+     * @return the tag.
+     * @since 0.2.0
+     */
+    public static BinaryTag of(int size) {
+        return new BinaryTag(size);
+    }
+
+    public static BinaryTag of(Map<String, ? extends BinaryNode> map) {
         final BinaryTag tag = new BinaryTag(map.size());
         tag.map.putAll(map);
         return tag;
     }
 
     @SafeVarargs
-    public static BinaryTag of(Map.Entry<String, BinaryNode>... entries) {
-        final BinaryTag tag = new BinaryTag(entries.length);
-        for (var e : entries) {
-            tag.map.put(e.getKey(), e.getValue());
-        }
-        return tag;
+    public static BinaryTag of(Map.Entry<String, ? extends BinaryNode>... entries) {
+        return of(Map.ofEntries(entries));
     }
 
     public static BinaryTag read(DataInput in) throws IOException {
@@ -62,16 +74,35 @@ public final /* value */ class BinaryTag implements BinaryNode {
         final BinaryTag tag = new BinaryTag(size);
         for (int i = 0; i < size; i++) {
             final String name = in.readUTF();
-            final BinaryDataType type = BinaryNode.readType(in);
+            final byte type = in.readByte();
             tag.map.put(name,
-                type == BinaryDataType.TAG
+                type == TAG
                     ? read(in)
                     : BinaryData.read(in, type));
         }
         return tag;
     }
 
-    public void writeNoType(DataOutput out) throws IOException {
+    /**
+     * Reads a root tag from the given input.
+     *
+     * @param in the input.
+     * @return the root tag.
+     * @throws IOException if an I/O error occurs.
+     * @since 0.2.0
+     */
+    public static BinaryTag readRoot(DataInput in) throws IOException {
+        return BinaryNode.read(in).asTag();
+    }
+
+    /**
+     * Writes the content.
+     *
+     * @param out the output
+     * @throws IOException if an I/O error occurs.
+     * @since 0.2.0
+     */
+    public void writeContent(DataOutput out) throws IOException {
         out.writeInt(map.size());
         for (var e : map.entrySet()) {
             out.writeUTF(e.getKey());
@@ -82,12 +113,12 @@ public final /* value */ class BinaryTag implements BinaryNode {
     @Override
     public void write(DataOutput out) throws IOException {
         writeType(out);
-        writeNoType(out);
+        writeContent(out);
     }
 
     @Override
-    public BinaryDataType type() {
-        return BinaryDataType.TAG;
+    public byte type() {
+        return TAG;
     }
 
     /**
@@ -109,9 +140,9 @@ public final /* value */ class BinaryTag implements BinaryNode {
      */
     public void set(String name, BinaryNode node, boolean checkType) {
         if (checkType) {
-            final BinaryDataType type = get(name).type();
+            final byte type = get(name).type();
             if (type != node.type()) {
-                throw new IllegalArgumentException("The previous type was " + type + ", which is not match the new type " + node.type());
+                throw new IllegalArgumentException("The previous type was " + BinaryNode.typeName(type) + ", which does not match the new type " + BinaryNode.typeName(node.type()));
             }
         }
         map.put(name, node);
@@ -201,91 +232,126 @@ public final /* value */ class BinaryTag implements BinaryNode {
         return map.get(name);
     }
 
-    public BinaryNode get(String name, BinaryDataType type) {
+    /**
+     * Gets a value from this tag with the given name and check the type.
+     *
+     * @param name the name.
+     * @param type the type.
+     * @return the value.
+     * @since 0.2.0
+     */
+    public BinaryNode get(String name, byte type) {
         final BinaryNode node = get(name);
         if (node.type() != type) {
-            throw new IllegalArgumentException("Expected type " + type + " for tag '" + name + "', got " + node.type());
+            throw new IllegalArgumentException("Expected type " + BinaryNode.typeName(type) + " for tag '" + name + "', got " + BinaryNode.typeName(node.type()));
         }
         return node;
     }
 
     public BinaryData getData(String name) {
         final BinaryNode node = get(name);
-        if (node.type() == BinaryDataType.TAG) {
+        if (node.type() == TAG) {
             throw new IllegalArgumentException("Expected type not TAG for tag '" + name + "', got TAG");
         }
         return node.asData();
     }
 
-    public BinaryData getData(String name, BinaryDataType type) {
-        if (type == BinaryDataType.TAG) {
+    /**
+     * Gets a {@link BinaryData} value from this tag with the given name and check the type.
+     *
+     * @param name the name.
+     * @param type the type.
+     * @return the value.
+     * @since 0.2.0
+     */
+    public BinaryData getData(String name, byte type) {
+        if (type == TAG) {
             throw new IllegalArgumentException("Expected type not TAG for tag '" + name + "', got TAG");
         }
         return get(name, type).asData();
     }
 
     public BinaryTag getTag(String name) {
-        return get(name, BinaryDataType.TAG).asTag();
+        return get(name, TAG).asTag();
     }
 
     public byte getByte(String name) {
-        return getData(name, BinaryDataType.BYTE).asByte();
+        return getData(name, BYTE).asByte();
     }
 
     public short getShort(String name) {
-        return getData(name, BinaryDataType.SHORT).asShort();
+        return getData(name, SHORT).asShort();
     }
 
     public int getInt(String name) {
-        return getData(name, BinaryDataType.INT).asInt();
+        return getData(name, INT).asInt();
     }
 
     public long getLong(String name) {
-        return getData(name, BinaryDataType.LONG).asLong();
+        return getData(name, LONG).asLong();
     }
 
     public float getFloat(String name) {
-        return getData(name, BinaryDataType.FLOAT).asFloat();
+        return getData(name, FLOAT).asFloat();
     }
 
     public double getDouble(String name) {
-        return getData(name, BinaryDataType.DOUBLE).asDouble();
+        return getData(name, DOUBLE).asDouble();
     }
 
     public String getString(String name) {
-        return getData(name, BinaryDataType.STRING).asString();
+        return getData(name, STRING).asString();
     }
 
     public byte[] getByteArray(String name) {
-        return getData(name, BinaryDataType.BYTE_ARRAY).asByteArray();
+        return getData(name, BYTE_ARRAY).asByteArray();
     }
 
     public short[] getShortArray(String name) {
-        return getData(name, BinaryDataType.SHORT_ARRAY).asShortArray();
+        return getData(name, SHORT_ARRAY).asShortArray();
     }
 
     public int[] getIntArray(String name) {
-        return getData(name, BinaryDataType.INT_ARRAY).asIntArray();
+        return getData(name, INT_ARRAY).asIntArray();
     }
 
     public long[] getLongArray(String name) {
-        return getData(name, BinaryDataType.LONG_ARRAY).asLongArray();
+        return getData(name, LONG_ARRAY).asLongArray();
     }
 
     public float[] getFloatArray(String name) {
-        return getData(name, BinaryDataType.FLOAT_ARRAY).asFloatArray();
+        return getData(name, FLOAT_ARRAY).asFloatArray();
     }
 
     public double[] getDoubleArray(String name) {
-        return getData(name, BinaryDataType.DOUBLE_ARRAY).asDoubleArray();
+        return getData(name, DOUBLE_ARRAY).asDoubleArray();
     }
 
     public String[] getStringArray(String name) {
-        return getData(name, BinaryDataType.STRING_ARRAY).asStringArray();
+        return getData(name, STRING_ARRAY).asStringArray();
     }
 
     public BinaryTag[] getTagArray(String name) {
-        return getData(name, BinaryDataType.TAG_ARRAY).asTagArray();
+        return getData(name, TAG_ARRAY).asTagArray();
+    }
+
+    /**
+     * {@return an unmodifiable view of the map}
+     *
+     * @since 0.2.0
+     */
+    public @UnmodifiableView Map<String, BinaryNode> map() {
+        if (mapView == null) {
+            mapView = Collections.unmodifiableMap(map);
+        }
+        return mapView;
+    }
+
+    @Override
+    public @NotNull BinaryTag copy() {
+        final var newMap = HashMap.<String, BinaryNode>newHashMap(map.size());
+        map.forEach((name, node) -> newMap.put(name, node.copy()));
+        return of(newMap);
     }
 
     @Override
@@ -306,19 +372,21 @@ public final /* value */ class BinaryTag implements BinaryNode {
         return Objects.hash(map);
     }
 
+    private static void appendString(StringBuilder b, Map.Entry<String, BinaryNode> e) {
+        b.append('\'').append(e.getKey()).append("': ").append(e.getValue());
+    }
+
     @Override
     public String toString() {
         final StringBuilder sb = new StringBuilder(256);
         sb.append('{');
-        for (var e : map.entrySet()) {
-            sb.append(e.getKey()).append(": ");
-            final BinaryNode value = e.getValue();
-            if (value.type() == BinaryDataType.STRING) {
-                sb.append('\'').append(value.asString()).append('\'');
-            } else {
-                sb.append(value);
+        var it = map.entrySet().iterator();
+        if (it.hasNext()) {
+            appendString(sb, it.next());
+            while (it.hasNext()) {
+                sb.append(", ");
+                appendString(sb, it.next());
             }
-            sb.append(", ");
         }
         sb.append('}');
         return sb.toString();
